@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from src.config import DATA_DIR
-from src.browser.cdp_helper import cdp_evaluate, close_cdp_tab, list_cdp_pages
+from src.browser.cdp_helper import cdp_evaluate, cdp_real_click, close_cdp_tab, list_cdp_pages
 from src.utils.job_tracker import append_or_update_tracker_row, read_tracker_rows
 
 SOCIAL_OR_FOOTER_DOMAINS = (
@@ -286,4 +286,126 @@ def sync_submitted_applications_from_tabs_and_gmail() -> List[str]:
                 close_cdp_tab(matched_tab_id)
             updated_companies.append(f"{comp} — {title}")
 
+    # Also triage any new recruiter availability / interview emails in Gmail into "Jobs Awaiting response"
+    try:
+        triage_recruiter_availability_emails_cdp()
+    except Exception:
+        pass
+
     return updated_companies
+
+
+def triage_recruiter_availability_emails_cdp(
+    target_label: str = "Jobs Awaiting response",
+) -> List[Dict[str, str]]:
+    """
+    Scans the active Gmail Inbox tab (`mail.google.com`) via CDP for emails where a recruiter
+    or hiring team reached out for interview availability, phone screen scheduling, or next-step
+    assessments, and moves them into the `Jobs Awaiting response` label.
+    """
+    pages = list_cdp_pages()
+    gmail_tab = next((p for p in pages if "mail.google.com" in p.get("url", "")), None)
+    if not gmail_tab:
+        return []
+
+    ws = gmail_tab["webSocketDebuggerUrl"]
+    cdp_evaluate(ws, 'location.href = "https://mail.google.com/mail/u/0/#inbox";')
+    time.sleep(3.5)
+
+    selected = (
+        cdp_evaluate(
+            ws,
+            """(() => {
+        const tables = Array.from(document.querySelectorAll("table.F.cf.zt"));
+        const activeTable = tables.find(t => t.getBoundingClientRect().width > 0) || tables[0];
+        if (!activeTable) return [];
+        const trs = Array.from(activeTable.querySelectorAll("tr.zA"));
+        const matched = [];
+        const ignoreSubjKeywords = [
+            "application received",
+            "thank you for applying",
+            "thanks for applying",
+            "we received your application",
+            "your application was received",
+            "verification code",
+            "security code",
+            "one-time access code",
+            "multifactor authentication",
+            "reset your password",
+            "daily digest"
+        ];
+        const availabilityKeywords = [
+            "availability",
+            "available to chat",
+            "available to speak",
+            "schedule a call",
+            "schedule a phone",
+            "schedule a time",
+            "phone screen",
+            "virtual interview",
+            "invite you to interview",
+            "time to connect",
+            "time to chat",
+            "days and times",
+            "let me know a few days",
+            "reviewed your background",
+            "complete next steps",
+            "complete a pre-screen",
+            "next step in our selection process",
+            "calendly.com"
+        ];
+        for (const tr of trs) {
+            const sender = ((tr.querySelector(".yX .yW") || {}).textContent || "").trim();
+            const subj = ((tr.querySelector(".bog") || {}).textContent || "").trim();
+            const snip = ((tr.querySelector(".y2") || {}).textContent || "").trim();
+            const subjLow = subj.toLowerCase();
+            const combinedLow = (subj + " " + snip).toLowerCase();
+            if (ignoreSubjKeywords.some(k => subjLow.includes(k))) {
+                continue;
+            }
+            if (availabilityKeywords.some(k => combinedLow.includes(k))) {
+                const cb = tr.querySelector("div[role=checkbox]");
+                if (cb && cb.getAttribute("aria-checked") !== "true") {
+                    cb.click();
+                }
+                matched.push({sender, subject: subj});
+            }
+        }
+        return matched;
+    })()""",
+        )
+        or []
+    )
+
+    if not selected:
+        return []
+
+    time.sleep(1.0)
+    move_btn = cdp_evaluate(
+        ws,
+        """(() => {
+        const btns = Array.from(document.querySelectorAll('[aria-label="Move to"], [data-tooltip="Move to"]'));
+        const b = btns.find(el => el.getBoundingClientRect().width > 0);
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+    })()""",
+    )
+    if move_btn:
+        cdp_real_click(ws, move_btn["x"], move_btn["y"])
+        time.sleep(1.5)
+        item = cdp_evaluate(
+            ws,
+            f"""(() => {{
+            const items = Array.from(document.querySelectorAll('[role=menuitem], .J-N, .J-LC'));
+            const target = items.find(el => el.textContent && el.textContent.toLowerCase().includes({json.dumps(target_label.lower())}) && el.getBoundingClientRect().width > 0);
+            if (!target) return null;
+            const r = target.getBoundingClientRect();
+            return {{x: r.x + r.width / 2, y: r.y + r.height / 2}};
+        }})()""",
+        )
+        if item:
+            cdp_real_click(ws, item["x"], item["y"])
+            time.sleep(2.0)
+
+    return selected
