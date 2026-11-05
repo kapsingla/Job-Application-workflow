@@ -1,0 +1,105 @@
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[top=0.42in, bottom=0.42in, left=0.48in, right=0.48in]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+\usepackage{multicol}
+\usepackage{xcolor}
+
+\pagenumbering{gobble}
+\setlength{\parindent}{0pt}
+\definecolor{navy}{HTML}{1E3A5F}
+\definecolor{darkgray}{HTML}{334155}
+
+\titleformat{\section}{\large\bfseries\color{navy}}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{7pt}{4pt}
+
+\setlist[itemize]{leftmargin=1.2em, itemsep=1.5pt, topsep=2pt, parsep=0pt}
+
+\begin{document}
+
+% -------------------- HEADER --------------------
+\begin{center}
+    {\LARGE \textbf{\color{navy}\VAR{contact.full_name | latex_escape}}} \\[3pt]
+    {\small
+      \VAR{contact.phone | latex_escape}
+      \ \textbar\ \href{mailto:\VAR{contact.email | latex_escape}}{\VAR{contact.email | latex_escape}}
+      \ \textbar\ \VAR{contact.address.city | latex_escape}, \VAR{contact.address.state_code | latex_escape}
+      \BLOCK{if contact.linkedin}
+      \ \textbar\ \href{\VAR{contact.linkedin_url | default('https://www.linkedin.com') | latex_escape}}{\VAR{contact.linkedin | latex_escape}}
+      \BLOCK{endif}
+    }
+\end{center}
+
+\vspace{-6pt}
+
+% -------------------- PROFESSIONAL SUMMARY --------------------
+\section{Professional Summary}
+{\small \VAR{tailored.tailored_summary | latex_rich}}
+
+% -------------------- CORE COMPETENCIES --------------------
+\BLOCK{if tailored.core_competencies}
+\section{Core Competencies}
+\begin{multicols}{2}
+\begin{itemize}[itemsep=1pt, topsep=0pt]
+\BLOCK{for comp in tailored.core_competencies}
+    \item {\small \VAR{comp | latex_escape}}
+\BLOCK{endfor}
+\end{itemize}
+\end{multicols}
+\vspace{-4pt}
+\BLOCK{endif}
+
+% -------------------- PROFESSIONAL EXPERIENCE --------------------
+\section{Professional Experience}
+\BLOCK{for exp in tailored.tailored_experience}
+\textbf{\VAR{exp.title | latex_escape}} \hfill \textit{\color{darkgray}\VAR{exp.start_date | latex_escape} -- \VAR{exp.end_date | latex_escape}} \\
+\textit{\color{darkgray}\VAR{exp.company | latex_escape}} \\[2pt]
+\BLOCK{if exp.leadership_summary}
+{\small \hspace*{1em}\VAR{exp.leadership_summary | latex_rich}} \\[2pt]
+\BLOCK{endif}
+\BLOCK{if exp.bullets or exp.highlights}
+{\small \hspace*{1em}\textbf{\textit{Key Initiatives \& Delivery:}}}
+\begin{itemize}
+\BLOCK{for bullet in (exp.bullets or exp.highlights)}
+    \item {\small \VAR{bullet | latex_rich}}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{endif}
+\vspace{4pt}
+\BLOCK{endfor}
+
+% -------------------- EDUCATION --------------------
+\section{Education}
+\BLOCK{for edu in education}
+\textbf{\VAR{edu.school | latex_escape}} \hfill {\color{darkgray}\VAR{edu.graduation_year | latex_escape}} \\
+\textit{\VAR{edu.degree | latex_escape} --- \VAR{edu.field_of_study | latex_escape}}
+\BLOCK{if edu.coursework}
+\\ {\footnotesize \color{darkgray}Key Coursework: \VAR{edu.coursework | latex_escape}}
+\BLOCK{endif}
+\\[3pt]
+\BLOCK{endfor}
+
+% -------------------- CERTIFICATIONS --------------------
+\BLOCK{if certifications}
+\section{Certifications \& Professional Development}
+\begin{itemize}[itemsep=1pt, topsep=1pt]
+\BLOCK{for cert in certifications}
+    \item {\small \VAR{cert | latex_escape}}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{endif}
+
+% -------------------- TECHNICAL PROFICIENCIES --------------------
+\section{Technical Proficiencies}
+\begin{tabularx}{\textwidth}{@{} >{\bfseries\small}p{1.35in} >{\small}X @{}}
+\BLOCK{for cat in tailored.prioritized_skills}
+\VAR{cat.category | latex_escape} & \VAR{cat.skills | join(', ') | latex_escape} \\[2pt]
+\BLOCK{endfor}
+\end{tabularx}
+
+\end{document}

@@ -1,0 +1,77 @@
+{
+  "contact": {
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "full_name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "555-019-2834",
+    "address": {
+      "street": "100 Main St",
+      "city": "San Francisco",
+      "state": "California",
+      "state_code": "CA",
+      "postal_code": "94105",
+      "country": "United States of America"
+    },
+    "linkedin": "linkedin.com/in/janedoe",
+    "linkedin_url": "https://www.linkedin.com/in/janedoe"
+  },
+  "job_preferences": {
+    "target_titles": [
+      "VP of Engineering",
+      "Senior Director of Software Engineering",
+      "Director of AI Engineering",
+      "Director of Software Engineering",
+      "Senior Engineering Manager"
+    ],
+    "min_compensation_usd": 190000,
+    "excluded_companies": [],
+    "excluded_portals": [
+      "hackajob.com",
+      "jobgether.com",
+      "lensa.com",
+      "dice.com",
+      "ziprecruiter.com"
+    ],
+    "excluded_role_keywords": [
+      "security",
+      "cybersecurity",
+      "devsecops",
+      "secops",
+      "infosec",
+      "appsec",
+      "ciso",
+      "iam"
+    ]
+  },
+  "work_authorization": {
+    "authorized_to_work_in_us": true,
+    "requires_sponsorship": false
+  },
+  "education": [
+    {
+      "school": "State University",
+      "degree": "Master of Business Administration (M.B.A.)",
+      "field_of_study": "Technology & Operations Management",
+      "graduation_year": "2014",
+      "coursework": "Enterprise Strategy, Data Analytics, Product Management"
+    }
+  ],
+  "certifications": [
+    "AWS Certified Solutions Architect",
+    "Certified Scrum Master (CSM)"
+  ],
+  "experience": [
+    {
+      "company": "Enterprise Corp",
+      "title": "Director, AI Engineering & Enterprise Platforms",
+      "start_date": "2024",
+      "end_date": "Present",
+      "leadership_summary": "Lead multi-disciplinary engineering teams building cloud-native AI and platform services at enterprise scale.",
+      "highlights": [
+        "<strong>Enterprise AI Platform:</strong> Architected and scaled internal multi-agent and MCP platform adopted by 600+ engineers.",
+        "<strong>Cloud Modernization:</strong> Delivered high-throughput event-driven microservices reducing infrastructure costs by $2M+ annually."
+      ]
+    }
+  ]
+}

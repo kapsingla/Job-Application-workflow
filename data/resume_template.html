@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ contact.full_name }} - Resume</title>
+  <style>
+    @page { size: letter; margin: 0.27in 0.40in; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, "Times New Roman", serif; font-size: 8.3pt; line-height: 1.18; color: #111827; }
+    header { text-align: center; padding-bottom: 2px; margin-bottom: 2px; }
+    h1 { font-size: 15.0pt; font-weight: 700; letter-spacing: 0.5px; color: #1e3a5f; }
+    .contact-bar { font-size: 8.2pt; color: #334155; margin-top: 1px; }
+    .contact-bar span + span::before { content: "  |  "; padding: 0 4px; color: #64748b; }
+    .contact-bar a { color: #334155; text-decoration: none; }
+    section { margin-bottom: 2.5px; }
+    h2 { font-size: 9.2pt; font-weight: 700; color: #1e3a5f; border-bottom: 1px solid #1e3a5f; padding-bottom: 1px; margin-bottom: 1.5px; }
+    .summary { font-size: 8.1pt; text-align: justify; }
+    .competencies-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; margin-left: 12px; font-size: 8.0pt; }
+    .role-block { margin-bottom: 2.5px; }
+    .role-header { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; font-size: 8.6pt; }
+    .role-date { font-weight: 400; font-style: italic; color: #475569; }
+    .role-sub { font-style: italic; font-size: 8.1pt; color: #475569; margin-bottom: 0.5px; }
+    .leadership-para { text-indent: 8px; text-align: justify; margin-bottom: 1px; font-size: 8.0pt; }
+    .key-init-label { font-weight: 700; font-style: italic; margin-left: 8px; margin-top: 0.5px; margin-bottom: 0.5px; font-size: 8.1pt; }
+    ul { margin-left: 14px; }
+    li { margin-bottom: 0.8px; text-align: justify; font-size: 8.0pt; }
+    .edu-block { margin-bottom: 1.5px; }
+    .edu-row { display: flex; justify-content: space-between; font-weight: 700; font-size: 8.4pt; }
+    .edu-sub { font-style: italic; font-size: 8.1pt; }
+    .edu-coursework { font-size: 7.6pt; color: #475569; }
+    .skills-grid { display: table; width: 100%; font-size: 8.0pt; }
+    .skill-row { display: table-row; }
+    .skill-category { display: table-cell; font-weight: 700; width: 25%; padding-bottom: 1px; vertical-align: top; }
+    .skill-items { display: table-cell; padding-bottom: 1px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ contact.full_name }}</h1>
+    <div class="contact-bar">
+      <span>{{ contact.phone }}</span>
+      <span><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></span>
+      <span>{{ contact.address.city }}, {{ contact.address.state_code }}</span>
+      {% if contact.linkedin %}<span><a href="{{ contact.linkedin_url | default('https://www.linkedin.com') }}">{{ contact.linkedin }}</a></span>{% endif %}
+    </div>
+  </header>
+
+  <section>
+    <h2>Professional Summary</h2>
+    <p class="summary">{{ tailored.tailored_summary | safe }}</p>
+  </section>
+
+  {% if tailored.core_competencies %}
+  <section>
+    <h2>Core Competencies</h2>
+    <ul class="competencies-grid">
+      {% for comp in tailored.core_competencies %}
+      <li>{{ comp }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Professional Experience</h2>
+    {% for exp in tailored.tailored_experience %}
+    <div class="role-block">
+      <div class="role-header">
+        <span>{{ exp.title }}</span>
+        <span class="role-date">{{ exp.start_date }} – {{ exp.end_date }}</span>
+      </div>
+      <div class="role-sub">{{ exp.company }}</div>
+      {% if exp.leadership_summary %}
+      <p class="leadership-para">{{ exp.leadership_summary | safe }}</p>
+      {% endif %}
+      {% if exp.bullets %}
+      <div class="key-init-label">Key Initiatives &amp; Delivery:</div>
+      <ul>
+        {% for bullet in exp.bullets %}
+        <li>{{ bullet | safe }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>Education</h2>
+    {% for edu in education %}
+    <div class="edu-block">
+      <div class="edu-row">
+        <span>{{ edu.school }}</span>
+        <span style="font-weight: 400; color: #475569;">{{ edu.graduation_year }}</span>
+      </div>
+      <div class="edu-sub">{{ edu.degree }} — {{ edu.field_of_study }}</div>
+      {% if edu.coursework %}
+      <div class="edu-coursework">Key Coursework: {{ edu.coursework }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  {% if certifications %}
+  <section>
+    <h2>Certifications &amp; Professional Development</h2>
+    <ul>
+      {% for cert in certifications %}
+      <li>{{ cert }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Technical Proficiencies</h2>
+    <div class="skills-grid">
+      {% for cat in tailored.prioritized_skills %}
+      <div class="skill-row">
+        <div class="skill-category">{{ cat.category }}</div>
+        <div class="skill-items">{{ cat.skills | join(", ") }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</body>
+</html>

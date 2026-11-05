@@ -1,0 +1,51 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Virtual Environments & Python Cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Browser Sessions, Cookies & Profiles
+.browser_profile/
+storage_state.json
+
+# Personal Candidate Data, Credentials Vault & Trackers
+data/master_profile.json
+data/common_questions.json
+data/workday_accounts_vault.json
+data/Job_Search_Tracker.xlsx
+data/scraped_jds/
+data/scraped_jds*/
+data/scraped_jds.json
+get_question_prompts.py
+data/*.txt
+data/*.png
+data/*.jpg
+data/*.pdf
+data/*.html
+!data/resume_template.html
+!data/resume_template.tex
+!data/master_profile.example.json
+!data/common_questions.example.json
+
+# Generated Resumes, Logs, Scratch & One-Off Scripts
+output/
+scratch/
+scripts/
+generate_*.py
+*_jd*.txt
+*.pdf
+*.kml
+*.xlsx
+
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/
