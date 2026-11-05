@@ -390,3 +390,6 @@ def is_job_already_applied(company: str, job_title: str, job_url: str = "") -> b
     return False
 
 
+update_job_tracker = append_or_update_tracker_row
+
+

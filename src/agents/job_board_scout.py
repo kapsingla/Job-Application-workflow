@@ -483,29 +483,30 @@ def scan_linkedin_hourly_past24h_cdp(
         return li_tab["webSocketDebuggerUrl"]
 
     search_queries = [
-        ('(Director of Engineering OR VP of Engineering OR Director of AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&f_WT=2&f_TPR=r86400&sortBy=DD"),
-        ('(Senior Manager Software Engineering OR Director Data Science) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&f_WT=2&f_TPR=r86400&sortBy=DD"),
-        ('(Director Software Engineering OR Senior Manager Engineering OR Director AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', location, "&f_TPR=r86400&sortBy=DD"),
-        ('(Senior Director Software Engineering OR Director AI Engineering OR Head of AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&f_WT=2&f_TPR=r86400&sortBy=DD"),
+        ('(Director of Engineering OR VP of Engineering OR Director of AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&geoId=103644278&f_WT=2&f_TPR=r86400&sortBy=DD"),
+        ('(Senior Manager Software Engineering OR Director Data Science) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&geoId=103644278&f_WT=2&f_TPR=r86400&sortBy=DD"),
+        ('(Director Software Engineering OR Senior Manager Engineering OR Director AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', location, "&geoId=103112676&f_TPR=r86400&sortBy=DD"),
+        ('(Senior Director Software Engineering OR Director AI Engineering OR Head of AI) NOT "Security" NOT "DevSecOps" NOT "Cybersecurity"', "United States", "&geoId=103644278&f_WT=2&f_TPR=r86400&sortBy=DD"),
     ]
 
     # First try high-precision DOM card extraction across the Past-24h search queries
+    # Supports both legacy `a[href*="/jobs/view/"]` and modern `/jobs/search-results/` `div[role="button"]` cards
     dom_js = r"""(() => {
         const results = [];
-        const seenUrls = new Set();
+        const seenKeys = new Set();
         const links = Array.from(document.querySelectorAll('a')).filter(a => a.href && a.href.includes('/jobs/view/'));
         for (const a of links) {
             const cleanUrl = a.href.split('?')[0];
-            if (seenUrls.has(cleanUrl)) continue;
-            seenUrls.add(cleanUrl);
+            if (seenKeys.has(cleanUrl)) continue;
+            seenKeys.add(cleanUrl);
             
             let container = a;
             for (let i = 0; i < 5; i++) {
                 if (container.parentElement) container = container.parentElement;
             }
-            const textLines = (container ? container.innerText : a.innerText).split('\n').map(s => s.trim()).filter(Boolean);
+            const textLines = (container ? (container.innerText || container.textContent || '') : (a.innerText || a.textContent || '')).split('\n').map(s => s.trim()).filter(Boolean);
             
-            let title = a.innerText.trim().split('\n')[0];
+            let title = (a.innerText || a.textContent || '').trim().split('\n')[0];
             if (title.endsWith(' with verification')) title = title.replace(' with verification', '').trim();
             
             let company = '';
@@ -544,6 +545,32 @@ def scan_linkedin_hourly_past24h_cdp(
                 });
             }
         }
+        const roleBtns = Array.from(document.querySelectorAll('div[role="button"]'));
+        for (const btn of roleBtns) {
+            const rawText = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!rawText || rawText.length < 25 || rawText.length > 500 || !rawText.includes(' • ')) continue;
+            if (rawText.includes('Applied')) continue;
+            const parts = rawText.split(' • ');
+            const leftPart = parts[0].trim();
+            const rightPart = parts.slice(1).join(' • ').trim();
+            const verIdx = leftPart.indexOf(' (Verified job)');
+            if (verIdx === -1) continue;
+            const title = leftPart.slice(0, verIdx).trim();
+            const company = leftPart.slice(verIdx + 15).trim();
+            const key = (company + '|' + title).toLowerCase();
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+            let salary = 'Not listed';
+            const salMatch = rightPart.match(/\$[0-9.,]+K?(?:\/yr|\/hr)?(?:\s*-\s*\$[0-9.,]+K?(?:\/yr|\/hr)?)?/i);
+            if (salMatch) salary = salMatch[0];
+            results.push({
+                title: title,
+                company: company,
+                location: rightPart.slice(0, 80),
+                salary: salary,
+                job_url: ''
+            });
+        }
         return results;
     })()"""
     raw_dom_items: List[dict] = []
@@ -570,10 +597,52 @@ def scan_linkedin_hourly_past24h_cdp(
         time.sleep(1.0)
         batch_items = cdp_evaluate(get_li_ws(), dom_js) or []
         for b_itm in batch_items:
-            u = b_itm.get("job_url", "")
+            u = b_itm.get("job_url", "") or f"{b_itm.get('company', '')}|{b_itm.get('title', '')}".lower()
             if u and u not in seen_job_urls:
                 seen_job_urls.add(u)
                 raw_dom_items.append(b_itm)
+
+        # In modern LinkedIn SDUI, also extract from body text per search query
+        cur_body = cdp_evaluate(get_li_ws(), "document.body ? (document.body.innerText || document.body.textContent || '') : ''") or ""
+        lines_b = [ln.strip() for ln in cur_body.split("\n") if ln.strip()]
+        noise_re = re.compile(
+            r"^(How promoted|Viewed|Posted |Be an early|Easy Apply|You’d be|You'd be|\d+ connection|\d+ company|\d+ school|Medical|Vision|Dental|401\(k\)|•|·|\$|Actively reviewing|\d+ result|\d+ benefit|Applied|Take the next step|Application status|\d+ notification)",
+            re.IGNORECASE,
+        )
+        leadership_re = re.compile(
+            r"\b(Director|Senior Director|Sr\.?\s*Director|Associate Director|Senior Manager|Sr\.?\s*Manager|VP|Vice President|Head of)\b",
+            re.IGNORECASE,
+        )
+        bi = 0
+        while bi < len(lines_b) - 2:
+            b_line = lines_b[bi]
+            if leadership_re.search(b_line) and not noise_re.search(b_line) and len(b_line) < 95 and "how ai search" not in b_line.lower():
+                bc_idx = bi + 1
+                while bc_idx < len(lines_b) and (leadership_re.search(lines_b[bc_idx]) or lines_b[bc_idx].lower() == b_line.lower()):
+                    bc_idx += 1
+                if bc_idx < len(lines_b):
+                    b_comp = lines_b[bc_idx]
+                    if not noise_re.search(b_comp) and len(b_comp) < 65 and "notification" not in b_comp.lower():
+                        b_loc = q_loc if q_loc else location
+                        b_sal = "Not listed"
+                        b_next = bc_idx + 1
+                        if b_next < len(lines_b) and any(w in lines_b[b_next] for w in ("United States", "Remote", "Area", "Hybrid")):
+                            b_loc = lines_b[b_next]
+                            b_next += 1
+                        for bj in range(b_next, min(len(lines_b), b_next + 4)):
+                            if "$" in lines_b[bj] and any(u in lines_b[bj] for u in ("/yr", "/hr", "K")):
+                                b_sal = lines_b[bj]
+                                break
+                        raw_dom_items.append({
+                            "title": b_line,
+                            "company": b_comp,
+                            "location": b_loc,
+                            "salary": b_sal,
+                            "job_url": "",
+                        })
+                        bi = b_next
+                        continue
+            bi += 1
 
     # Also scan LinkedIn's Recommended Jobs feed (/jobs/collections/recommended/)
     try:
@@ -596,45 +665,14 @@ def scan_linkedin_hourly_past24h_cdp(
     )
 
     raw_items: List[dict] = []
-    if raw_dom_items:
-        for itm in raw_dom_items:
-            if leadership_re.search(itm.get("title", "")):
-                raw_items.append(itm)
-    else:
-        raw_text = cdp_evaluate(get_li_ws(), "document.body ? document.body.innerText : ''") or ""
-        start_idx = raw_text.find("How promoted jobs are ranked")
-        end_idx = raw_text.find("Are these results helpful?")
-        pane_text = raw_text[start_idx if start_idx >= 0 else 0 : end_idx if end_idx > 0 else 4500]
-
-        lines = [ln.strip() for ln in pane_text.split("\n") if ln.strip()]
-        noise_re = re.compile(
-            r"^(How promoted|Viewed|Posted |Be an early|Easy Apply|You’d be|You'd be|\d+ connection|\d+ company|\d+ school|Medical|Vision|Dental|401\(k\)|•|·|\$)",
-            re.IGNORECASE,
-        )
-
-        i = 0
-        while i < len(lines) - 2:
-            line = lines[i]
-            if leadership_re.search(line) and not noise_re.search(line) and len(line) < 95:
-                c_idx = i + 1
-                if c_idx < len(lines) and (leadership_re.search(lines[c_idx]) or lines[c_idx].lower() in line.lower() or line.lower() in lines[c_idx].lower()):
-                    c_idx += 1
-                if c_idx < len(lines):
-                    company_candidate = lines[c_idx]
-                    location_candidate = lines[c_idx + 1] if c_idx + 1 < len(lines) else location
-                    if not noise_re.search(company_candidate) and not leadership_re.search(company_candidate) and len(company_candidate) < 65:
-                        raw_items.append(
-                            {
-                                "title": line,
-                                "company": company_candidate,
-                                "location": location_candidate,
-                                "salary": "Not listed",
-                                "job_url": "",
-                            }
-                        )
-                        i = c_idx + 2
-                        continue
-            i += 1
+    seen_raw = set()
+    for itm in raw_dom_items:
+        t = itm.get("title", "").strip()
+        c = itm.get("company", "").strip()
+        key = (c.lower(), t.lower())
+        if c and t and key not in seen_raw and leadership_re.search(t):
+            seen_raw.add(key)
+            raw_items.append(itm)
 
     new_discoveries: List[dict] = []
     for item in raw_items:
@@ -650,13 +688,31 @@ def scan_linkedin_hourly_past24h_cdp(
         if is_job_already_tracked(comp, title, item_job_url):
             continue
 
-        # Navigate directly to the job posting to resolve external ATS apply URL
+        # Try clicking the job card on the active search page first to load right pane
+        clicked = False
+        if not item_job_url:
+            click_js = f"""(() => {{
+                const el = Array.from(document.querySelectorAll('p, div, span, h3')).find(e => e.innerText && e.innerText.trim().toLowerCase() === {json.dumps(comp.lower())});
+                if (el) {{
+                    el.click();
+                    return true;
+                }}
+                return false;
+            }})()"""
+            try:
+                clicked = bool(cdp_evaluate(get_li_ws(), click_js))
+            except Exception:
+                clicked = False
+            if clicked:
+                time.sleep(2.5)
+
         target_nav_url = item_job_url or f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(comp + ' ' + title)}&location={quote_plus(location)}"
-        try:
-            cdp_evaluate(get_li_ws(), f"location.href = {json.dumps(target_nav_url)};")
-        except Exception:
-            pass
-        time.sleep(3.5)
+        if not clicked:
+            try:
+                cdp_evaluate(get_li_ws(), f"location.href = {json.dumps(target_nav_url)};")
+            except Exception:
+                pass
+            time.sleep(3.5)
 
         # Resolve real company name and title from the active job detail page if generic
         page_info = cdp_evaluate(get_li_ws(), """(() => {
