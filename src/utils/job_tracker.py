@@ -34,8 +34,77 @@ TRACKER_COLUMNS = [
     "Resume Folder",
     "Outreach Msg Status",
     "Application Status",
+    "Detailed Reason",
     "Notes",
 ]
+
+
+def split_application_status(raw_status: str, detailed_reason: str = "") -> tuple[str, str]:
+    """
+    Strictly normalizes `Application Status` into one of four canonical values:
+      - 'Applied'
+      - 'Not Applied'
+      - 'Excluded'
+      - 'Expired'
+    and extracts any parenthetical or descriptive detail into `Detailed Reason`.
+    """
+    s = (raw_status or "").strip()
+    d = (detailed_reason or "").strip()
+    s_low = s.lower()
+
+    if s_low in ("applied", "excluded", "expired", "not applied"):
+        canon = {
+            "applied": "Applied",
+            "excluded": "Excluded",
+            "expired": "Expired",
+            "not applied": "Not Applied",
+        }[s_low]
+        if not d:
+            d = "Applied" if canon == "Applied" else ""
+        return canon, d
+
+    # 1. Expired / Closed
+    if any(
+        k in s_low
+        for k in (
+            "expired",
+            "closed",
+            "unposted",
+            "no active posting",
+            "no longer accepting",
+            "not currently accepting",
+        )
+    ):
+        m = re.match(r"^(?:Excluded|Skipped|Closed)\s*\((.*)\)$", s, flags=re.I)
+        reason = m.group(1).strip() if m else s
+        return "Expired", (d or reason)
+
+    # 2. Applied
+    if s_low.startswith("applied") or ("duplicate of row" in s_low and "applied" in s_low):
+        m = re.match(r"^Applied\s*\((.*)\)$", s, flags=re.I)
+        if m:
+            inner = m.group(1).strip()
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", inner):
+                reason = f"Applied on {inner}"
+            else:
+                reason = inner
+        else:
+            reason = s
+        return "Applied", (d or reason)
+
+    # 3. Excluded / Skipped
+    if s_low.startswith("excluded") or s_low.startswith("skipped"):
+        m = re.match(r"^(?:Excluded|Skipped)\s*\((.*)\)$", s, flags=re.I)
+        reason = (
+            m.group(1).strip()
+            if m
+            else re.sub(r"^(?:Excluded|Skipped)\s*[:\-]?\s*", "", s, flags=re.I).strip()
+        )
+        return "Excluded", (d or reason or "Excluded per search criteria")
+
+    # 4. Not Applied
+    reason = d or (s if s_low not in ("not applied", "") else "Pending application")
+    return "Not Applied", reason
 
 
 def _col_letter(col_idx_zero_based: int) -> str:
@@ -161,12 +230,16 @@ def append_or_update_tracker_row(
     contact_link: str = "",
     rework_needed: str = "Yes",
     outreach_status: str = "Not started",
+    detailed_reason: str = "",
 ) -> str:
     """
-    Appends a new row to the `Job Tracker` worksheet inside `Job_Search_Tracker.xlsx`
-    using the exact 16-column schema.
+    Appends or updates a row in the `Job Tracker` worksheet inside `Job_Search_Tracker.xlsx`
+    using the 17-column schema (where `Application Status` is strictly `Applied` / `Not Applied` / `Excluded` / `Expired`
+    and `Detailed Reason` holds the specific date or exclusion/expiration reason).
     Updates `data/Job_Search_Tracker.xlsx` and mirrors to `EXTERNAL_TRACKER_PATH` if configured and writable.
     """
+    canon_status, det_reason = split_application_status(application_status, detailed_reason)
+
     TRACKER_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(TRACKER_LOCK_PATH, "a+", encoding="utf-8") as lock_fh:
         fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
@@ -272,7 +345,8 @@ def append_or_update_tracker_row(
                 resume_status,
                 resume_folder,
                 outreach_status,
-                application_status,
+                canon_status,
+                det_reason,
                 notes,
             ]
 
@@ -284,6 +358,13 @@ def append_or_update_tracker_row(
                 is_el = ET.SubElement(c_el, f"{{{ns_uri}}}is")
                 t_el = ET.SubElement(is_el, f"{{{ns_uri}}}t")
                 t_el.text = str(val or "")
+
+            # Update <dimension ref="A1:Q{final_max_row}"/> so Excel/openpyxl always sees all rows & columns
+            dim_el = tree.find("main:dimension", ns)
+            if dim_el is not None:
+                all_r_nums = [int(r.attrib.get("r", "1")) for r in sheet_data.findall("main:row", ns) if r.attrib.get("r", "1").isdigit()]
+                final_max = max(all_r_nums) if all_r_nums else target_row_num
+                dim_el.set("ref", f"A1:{_col_letter(len(TRACKER_COLUMNS) - 1)}{final_max}")
 
             files_map[sheet_path] = ET.tostring(tree, encoding="utf-8", xml_declaration=True)
 
@@ -399,7 +480,11 @@ def is_job_already_tracked(company: str, job_title: str, job_url: str = "") -> b
         rt = _normalize_token(r.get("Job Title", ""))
         ru_raw = r.get("Job Link", "")
         ru = ru_raw.split("?")[0].strip().lower()
-        row_ids = _extract_req_or_job_ids(ru_raw) | _extract_req_or_job_ids(r.get("Notes", ""))
+        row_ids = (
+            _extract_req_or_job_ids(ru_raw)
+            | _extract_req_or_job_ids(r.get("Detailed Reason", ""))
+            | _extract_req_or_job_ids(r.get("Notes", ""))
+        )
 
         if c_norm and t_norm and rc == c_norm and rt == t_norm:
             return True
@@ -437,7 +522,11 @@ def is_job_already_applied(company: str, job_title: str, job_url: str = "") -> b
         rt = _normalize_token(r.get("Job Title", ""))
         ru_raw = r.get("Job Link", "")
         ru = ru_raw.split("?")[0].strip().lower()
-        row_ids = _extract_req_or_job_ids(ru_raw) | _extract_req_or_job_ids(r.get("Notes", ""))
+        row_ids = (
+            _extract_req_or_job_ids(ru_raw)
+            | _extract_req_or_job_ids(r.get("Detailed Reason", ""))
+            | _extract_req_or_job_ids(r.get("Notes", ""))
+        )
 
         if c_norm and t_norm and rc == c_norm and rt == t_norm:
             return True

@@ -21,6 +21,8 @@ data/master_profile.json
 data/common_questions.json
 data/workday_accounts_vault.json
 data/Job_Search_Tracker.xlsx
+data/.tracker.lock
+*.lock
 data/scraped_jds/
 data/scraped_jds*/
 data/scraped_jds.json
